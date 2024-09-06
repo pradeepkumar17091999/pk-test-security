@@ -72,3 +72,26 @@ jobs:
         shell: bash
         continue-on-error: true
 
+        name: Archive Prowler Output
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Create Prowler Output Directory
+        run: mkdir -p /home/runner/work/${{ github.repository }}/prowler-output-${{ github.run_id }}/
+
+      - name: Example Command to Generate Files
+        run: echo "Sample Output" > /home/runner/work/${{ github.repository }}/prowler-output-${{ github.run_id }}/example.txt
+
+      - name: Archive Prowler Output
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.OUTPUT_ARTIFACTS_NAME }}
+          path: /home/runner/work/${{ github.repository }}/prowler-output-${{ github.run_id }}/
+
+
