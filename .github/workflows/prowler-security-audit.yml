@@ -1,48 +1,79 @@
-name: Prowler Security Audit
 
+name: CI
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   pull_request:
-    branches:
-      - main
+    branches: [ "main" ]
+  workflow_dispatch:
 
+env:
+  OUTPUT_FORMAT: csv
+  OUTPUT_ARTIFACTS_NAME: Scans
+  PROWLER_USER_ACCESS_KEY_ID: ${{ secrets.PROWLER_USER_ACCESS_KEY_ID }}
+  PROWLER_USER_SECRET_KEY_ID: ${{ secrets.PROWLER_USER_SECRET_KEY_ID }}
+  
 jobs:
-  prowler-audit:
+  build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up AWS CLI
+      - uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+    
+      - name: Install AWS CLI
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          curl "https://d1uj6qtbmh3dt5.cloudfront.net/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install
+          sudo apt install awscli
           aws --version
-
-      - name: Configure AWS CLI
-        run: |
-          aws configure set aws_access_key_id ${{ secrets.PROWLER_USER_ACCESS_KEY_ID }}
-          aws configure set aws_secret_access_key ${{ secrets.PROWLER_USER_SECRET_KEY_ID }}
-          aws configure set region us-west-2 # Change to your preferred region
 
       - name: Install Prowler
         run: |
-          curl -LO https://github.com/prowler-cloud/prowler/releases/download/v2.6.0/prowler_2.6.0_linux_amd64.zip
-          unzip prowler_2.6.0_linux_amd64.zip
-          chmod +x prowler
-          sudo mv prowler /usr/local/bin/
+          pip install prowler
 
-      - name: Run Prowler Security Audit
+      - name: Configure AWS Credentials
         run: |
-          prowler -M json -O prowler-report.json
+          aws configure set aws_access_key_id $PROWLER_USER_ACCESS_KEY_ID --profile DB
+          aws configure set aws_secret_access_key $PROWLER_USER_SECRET_KEY_ID --profile DB
 
-      - name: Upload Prowler Report
+      - name: Run Prowler for Each Sub Account
+        run: |
+            python -c "
+            import json
+            import os
+    
+            with open('sub-accounts.json', 'r') as file:
+                config = json.load(file)
+    
+            for account in config:
+                command = f'prowler -p DB -R arn:aws:iam::{account['accountNumber']}:role/Prowler-Security-User-Assign-Role -M $OUTPUT_FORMAT --output-filename {account['name']} --output-directory /home/runner/work/${{ github.repository }}/prowler-output'
+                print(f'Executing: {command}')
+                os.system(command)
+            "
+        shell: bash
+        continue-on-error: true
+
+      - name: Run Prowler for Each Control Tower Account
+        run: |
+            python -c "
+            import json
+            import os
+    
+            with open('control-tower-accounts.json', 'r') as file:
+                config = json.load(file)
+    
+            for account in config:
+                command = f'prowler -p DB -M $OUTPUT_FORMAT --output-filename {account['name']} --output-directory /home/runner/work/${{ github.repository }}/prowler-output'
+                print(f'Executing: {command}')
+                os.system(command)
+            "
+        shell: bash
+        continue-on-error: true
+
+      - name: Archive Prowler Output
         uses: actions/upload-artifact@v3
         with:
-          name: prowler-report
-          path: prowler-report.json
+          name: ${{ env.OUTPUT_ARTIFACTS_NAME }}
+          path: /home/runner/work/${{ github.repository }}/prowler-output/
