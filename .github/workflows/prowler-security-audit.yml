@@ -72,8 +72,3 @@ jobs:
         shell: bash
         continue-on-error: true
 
-      - name: Archive Prowler Output
-        uses: actions/upload-artifact@v3
-        with:
-          name: ${{ env.OUTPUT_ARTIFACTS_NAME }}
-          path: /home/runner/work/${{ github.repository }}/prowler-output/
